@@ -1,7 +1,4 @@
-// Learn more about F# at http://docs.microsoft.com/dotnet/fsharp
-
-
-open System
+open System open System.IO
 
 
 module Board = 
@@ -9,78 +6,112 @@ module Board =
    type Board = Cell list 
    type Index = int*int
 
-   let intializeBoard () : Board =
+   let initializeBoard () : Board =
       let init = [for i in 1..9 do Free] in init:Board
 
-   let updateBoard (board:Board) ((m,n):Index) (newCell:Cell) : board = 
-      board |> List.mapi (fun i x -> match i with | m*3+n -> newCell | _ -> x)       
+   let updateBoard (board:Board) ((c,r):Index) (newCell:Cell) : Board = 
+      let indexIntoList = (r-1)+(c/6)
+      board |> List.mapi (fun i x -> if i=indexIntoList then newCell else x)       
 
    let isFull (board:Board) : bool = 
       board |> List.exists (fun c -> c=Free) |> not    
 
-   let getCell (board:Board) (c:Index): Cell =
-        let i,j=c 
-        board.[i*3+j] 
+   let getCell (board:Board) (cell:Index): Cell =
+      let c,r=cell 
+      board.[(r-1)+(c/6)] 
 
    let writeBoard (board:Board) : unit = 
-      let format : string = function | Free -> " " | X -> "X" -> | O -> "O"
-      board |> List.iteri (function 2 | 5 | 8 -> printf "%s\n" (format Board.[i]) | _ -> printf "%s " (format Board.[i]) )
-       
+      let format = function | Free -> "     " | X -> "  X  " | O -> "  O  "
+      let bottom = let b = "_____|" in b+b+b 
+      let empty = let e = "     |" in e+e+e
+      Console.SetCursorPosition(0,0)
+      board |> List.splitInto 3 |> List.iter (fun row -> match row with 
+                                                         | [] -> ()
+                                                         | [x;y;z] -> printfn "%s\n%s|%s|%s|\n%s" empty (format x) (format y) (format z) bottom
+                                                         | _ -> () ) 
+      
 module Game = 
+   open Board 
+
    type Player = PlayerX | PlayerO 
    type State = Winner | Ongoing | Unresolved   
-   type PlayerPos = {Row:int; Col:int}
     
-   let (|ValidInput|_|) (cki:ConsoleKeyInfo) (curPos:Index) = 
-      let key = cki.Key 
-      if key = ConsoleKey.DownArrow && CurPos.Row=3 then None
-      elif key = ConsoleKey.UpArrow && CurPos.Row=1 then None   
-      elif key = ConsoleKey.LeftArrow && CurPos.Col=1 then None   
-      elif key = ConsoleKey.RightArrow && CurPos.Col=3 then None   
-      else Some ValidInput
 
-   let (|ThreeInARow|_|) board = 
-      let greatestCell,count = board |> List.countBy id  
-      if greatestCell=Free || count<3 then None
-      else let threes = [for t in 0..2 do board.[t*3..t*3+2]; [t..3..6+t]] in [0,4,8]::([2,4,6]::threes) //0..2, 036, 3..5, 147, 6..8, 258 
-           match greatestCount with 
-           | X -> if threes |> List.contains [X;X;X] then Some ThreeInARow 
-           | O -> if threes |> List.contains [O;O;O] then Some ThreeInARow
+
+   let (|InBound|_|) (cki:ConsoleKeyInfo) (curPos:Index) = 
+      let key = cki.Key 
+      if key = ConsoleKey.DownArrow    && snd curPos=7  then None
+      elif key = ConsoleKey.UpArrow    && snd curPos=1  then None   
+      elif key = ConsoleKey.LeftArrow  && fst curPos=2  then None   
+      elif key = ConsoleKey.RightArrow && fst curPos=14 then None   
+      else Some InBound 
+
+   let threeInARow board : bool*Cell = 
+      let greatestCell,count = board |> List.countBy id |> List.maxBy snd 
+      if greatestCell=Free || count<3 then (false, Free)  
+      else let threes = let rows = [for t in 0..2 do board.[t*3..t*3+2]] in 
+                        let cols = [ board.[0]::(board.[3]::(board.[6]::([]))) ] @ [ board.[2]::(board.[5]::(board.[8]::([]))) ]
+                                    @ [ board.[1]::(board.[4]::(board.[7]::([]))) ] in
+                                   [ [board.[0];board.[4];board.[8]] ] @ [ [board.[2];board.[4];board.[6]] ] @ rows @ cols          //all possible winning scenarios
+           match greatestCell with 
+           | X -> if threes |> List.contains [X;X;X] then (true, X) else (false, X)
+           | O -> if threes |> List.contains [O;O;O] then (true, O) else (false, O)
+           | _ -> (false,Free) 
          
 
 
-   let rec readInput (curPos:Index) (board:Board) (player:Player) : board =
+   let rec readInput (curPos:Index) (board:Board) (player:Player) : Board*Player =
       let cki = Console.ReadKey(true) //true = don't print to console
       match cki.Key with 
-      | ConsoleKey.X -> let check = getCell board curPos in if check=Free then updateBoard board curPos X 
-                                                            else Console.SetCursorPosition(1,4); printfn "Slot is occupied, look for another slot!"; 
-                                                                 Console.SetCursorPosition(1,4); eadInput curPos board player 
-      | ConsoleKey.O -> let check = getCell board curPos in if check=Free then updateBoard board curPos O
-                                                            else Console.SetCursorPosition(1,4); printfn "Slot is occupied, look for another slot!"; 
-                                                                 Console.SetCursorPosition(1,4); eadInput curPos board player 
+      | ConsoleKey.X -> let cell = getCell board curPos in if cell=Free && player=PlayerX then updateBoard board curPos X, PlayerO
+                                                           else Console.SetCursorPosition(0,10); printf "Slot is occupied, look for another slot!"; 
+                                                                Console.SetCursorPosition(curPos); readInput curPos board player 
+      | ConsoleKey.O -> let cell = getCell board curPos in if cell=Free && player=PlayerO then updateBoard board curPos O, PlayerX
+                                                           else Console.SetCursorPosition(0,10); printf "Slot is occupied, look for another slot!"; 
+                                                                Console.SetCursorPosition(curPos); readInput curPos board player 
   
-      |_ -> match 
+      |_ -> match curPos with
+            | InBound cki -> match cki.Key with                                                                            //setcursorpos uses row,col format  
+                             | ConsoleKey.RightArrow -> let newPos = fst curPos+6, snd curPos in Console.SetCursorPosition(newPos)
+                                                        readInput newPos board player
+                             | ConsoleKey.LeftArrow ->  let newPos = fst curPos-6, snd curPos in Console.SetCursorPosition(newPos)
+                                                        readInput newPos board player
+                             | ConsoleKey.UpArrow ->    let newPos = fst curPos, snd curPos-3 in Console.SetCursorPosition(newPos); 
+                                                        readInput newPos board player
+                             | ConsoleKey.DownArrow ->  let newPos = fst curPos, snd curPos+3 in Console.SetCursorPosition(newPos); 
+                                                        readInput newPos board player
+                             | _ ->  Console.SetCursorPosition(0,11); printf "!"
+                                     Console.SetCursorPosition(curPos); readInput curPos board player 
 
-      | ValidInput cki -> match cki.Key with 
-                          | ConsoleKey.RightArrow -> changePos 
-                          | ConsoleKey.LeftArrow->
-                          | ConsoleKey.UpArrow->
-                          | ConsoleKey.DownArrow ->
+
+            | _ -> Console.SetCursorPosition(0,10); printf "Only arrow keys, X or O is valid input"
+                   Console.SetCursorPosition(curPos); readInput curPos board player
   
-   let eval (board:Board) : GameState = 
-      match board with 
-      | ThreeInArow -> 
+   let eval (board:Board) : State = 
+      match threeInARow board with 
+      | true, X -> Winner 
+      | true, O -> Winner
+      | false, _ -> if isFull board then Unresolved else Ongoing 
 
-   nextTurn (player:Player) (board:Board) : (state:GameState) =
-       
+   let rec play (c:int) ((board,player):Board*Player) : unit =
+      writeBoard board 
+      Console.SetCursorPosition(0,12); printfn "%A: %i: %A" player c board
       
-   take input -> check if someone won and draw on board 
+      match eval board with
+      | Winner -> writeBoard board; printfn "%A won!: %i" player c
+      | Unresolved -> writeBoard board; printfn "No winner!" 
+      | Ongoing -> readInput (8,4) board player |> play (c+1)
+      
  
-   let rec playGame () =
-      
-
+   let beginGame () : unit =
+      Console.Clear()
+      let board = initializeBoard ()
+      play 0 (board,PlayerO) 
+               
+open Game
 
 [<EntryPoint>]
 let main argv =
-    playGame
+    beginGame ()
     0 // return an integer exit code
+
